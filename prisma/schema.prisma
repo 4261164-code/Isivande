@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ==========================================
+// ENUMS (Simulated as Strings in SQLite)
+// ==========================================
+// Role: LEARNER, FACILITATOR, ASSESSOR, MODERATOR, COMPLIANCE_ADMIN, SUPER_ADMIN
+// DocType: ID_DOCUMENT, HIGHEST_QUALIFICATION, DEMAND_LIST_SIG, POE_SUBMISSION, LEARNERSHIP_AGREEMENT
+// DocStatus: PENDING_REVIEW, APPROVED, REJECTED
+// AssessmentResult: PENDING, COMPETENT, NOT_YET_COMPETENT
+
+// ==========================================
+// IDENTITY & RBAC
+// ==========================================
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  users     User[]
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  hashedPassword String
+  firstName      String
+  lastName       String
+  role           String        // Enum: Role
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  learnerProfile LearnerProfile?
+  auditActions   AuditLog[]      @relation("Actor")
+  uploadedDocs   DocumentVersion[]
+  assessed       AssessmentReview[] @relation("Assessor")
+  moderated      AssessmentReview[] @relation("Moderator")
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model LearnerProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id])
+  
+  idNumber           String   @unique
+  legalNameExact     String   // Must exactly match ID document
+  readinessStatus    Boolean  @default(false) // Calculated by Readiness Engine
+  
+  documents          Document[]
+  enrollments        Enrollment[]
+  demandList         DemandList?
+  submissions        Submission[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// ==========================================
+// LEARNING & ENROLLMENT
+// ==========================================
+model Programme {
+  id          String   @id @default(uuid())
+  title       String
+  saqaId      String?
+  credits     Int?
+  enrollments Enrollment[]
+  assessments Assessment[]
+}
+
+model Enrollment {
+  id             String         @id @default(uuid())
+  learnerId      String
+  learner        LearnerProfile @relation(fields: [learnerId], references: [id])
+  programmeId    String
+  programme      Programme      @relation(fields: [programmeId], references: [id])
+  status         String         @default("ACTIVE") // ACTIVE, COMPLETED, DROPPED
+  createdAt      DateTime       @default(now())
+}
+
+// ==========================================
+// COMPLIANCE & DOCUMENTS (CORE ENGINE)
+// ==========================================
+model Document {
+  id              String         @id @default(uuid())
+  learnerId       String
+  learner         LearnerProfile @relation(fields: [learnerId], references: [id])
+  type            String         // Enum: DocType
+  status          String         @default("PENDING_REVIEW") // Enum: DocStatus
+  isReadable      Boolean        @default(false)
+  rejectionReason String?
+  
+  versions        DocumentVersion[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([learnerId, type]) // One active document chain per type per learner
+}
+
+model DocumentVersion {
+  id           String   @id @default(uuid())
+  documentId   String
+  document     Document @relation(fields: [documentId], references: [id])
+  fileKey      String   // S3 Object Key
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+// ==========================================
+// DEMAND LIST / PROCUREMENT
+// ==========================================
+model DemandList {
+  id             String         @id @default(uuid())
+  learnerId      String         @unique
+  learner        LearnerProfile @relation(fields: [learnerId], references: [id])
+  isSigned       Boolean        @default(false)
+  signedAt       DateTime?
+  approvalStatus String         @default("PENDING_REVIEW") // Enum: DocStatus
+  
+  items          DemandListItem[]
+  updatedAt      DateTime       @updatedAt
+}
+
+model DemandListItem {
+  id           String     @id @default(uuid())
+  demandListId String
+  demandList   DemandList @relation(fields: [demandListId], references: [id])
+  name         String
+  quantity     Int
+  cost         Float      // Using Float instead of Decimal for SQLite compatibility
+  supplier     String?
+}
+
+// ==========================================
+// ASSESSMENTS & PoE
+// ==========================================
+model Assessment {
+  id          String       @id @default(uuid())
+  programmeId String
+  programme   Programme    @relation(fields: [programmeId], references: [id])
+  title       String
+  isSummative Boolean      @default(false)
+  submissions Submission[]
+}
+
+model Submission {
+  id           String          @id @default(uuid())
+  assessmentId String
+  assessment   Assessment      @relation(fields: [assessmentId], references: [id])
+  learnerId    String
+  learner      LearnerProfile  @relation(fields: [learnerId], references: [id])
+  fileKey      String          // S3 Key for PoE
+  submittedAt  DateTime        @default(now())
+  
+  review       AssessmentReview?
+}
+
+model AssessmentReview {
+  id              String           @id @default(uuid())
+  submissionId    String           @unique
+  submission      Submission       @relation(fields: [submissionId], references: [id])
+  
+  assessorId      String?
+  assessor        User?            @relation("Assessor", fields: [assessorId], references: [id])
+  assessorResult  String           @default("PENDING") // Enum: AssessmentResult
+  assessorDate    DateTime?
+  
+  moderatorId     String?
+  moderator       User?            @relation("Moderator", fields: [moderatorId], references: [id])
+  moderatorResult String           @default("PENDING") // Enum: AssessmentResult
+  moderatorDate   DateTime?
+}
+
+// ==========================================
+// AUDIT & CORRECTION LOG
+// ==========================================
+model AuditLog {
+  id          String   @id @default(uuid())
+  entityName  String   // e.g., "LearnerProfile", "Document"
+  entityId    String   // UUID of the affected record
+  action      String   // CREATE, UPDATE, DELETE, STATUS_CHANGE
+  oldValue    String?  // JSON stringified state before change
+  newValue    String?  // JSON stringified state after change
+  reason      String?  // Mandatory for corrections
+  actorId     String
+  actor       User     @relation("Actor", fields: [actorId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([entityName, entityId])
+}

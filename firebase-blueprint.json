@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["student", "admin"] }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Module": {
+      "title": "Module",
+      "description": "Course module",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "title"]
+    },
+    "Video": {
+      "title": "Video",
+      "description": "Module video",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "title": { "type": "string" },
+        "url": { "type": "string" }
+      },
+      "required": ["id", "moduleId", "title", "url"]
+    },
+    "Assessment": {
+      "title": "Assessment",
+      "description": "Module assessment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "title": { "type": "string" }
+      },
+      "required": ["id", "moduleId", "title"]
+    },
+    "Deadline": {
+      "title": "Deadline",
+      "description": "Admin deadline",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "title", "date"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Student assessment submission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assessmentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "grade": { "type": "number" }
+      },
+      "required": ["id", "assessmentId", "studentId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/modules/{moduleId}": { "schema": "Module", "description": "Course modules" },
+    "/modules/{moduleId}/videos/{videoId}": { "schema": "Video", "description": "Module videos" },
+    "/modules/{moduleId}/assessments/{assessmentId}": { "schema": "Assessment", "description": "Module assessments" },
+    "/deadlines/{deadlineId}": { "schema": "Deadline", "description": "Admin deadlines" },
+    "/submissions/{submissionId}": { "schema": "Submission", "description": "Student submissions" }
+  }
+}
